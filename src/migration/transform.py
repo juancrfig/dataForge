@@ -24,18 +24,35 @@ def _transform_customers(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns and df[col].dtype == 'object':
             df[col] = df[col].apply(_sanitize_strings)
 
-    # 2. Type Optimization  for Categorical Identifiers
+    # 2. Rename column names
+    COLUMN_MAPPING = {
+        'customer_id': 'id',
+        'customer_unique_id': 'unique_id',
+        'customer_city': 'city',
+        'customer_state': 'state',
+        'customer_zip_code_prefix': 'zip_code_prefix',
+    }
+    df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    # 3. Type Optimization  for Categorical Identifiers
     for col in ['customer_zip_code_prefix', 'customer_city', 'customer_state']:
         if col in df.columns:
             df[col] = df[col].astype('category')
 
-    # 3. Standardization / Cleaning
+    # 4. Standardization / Cleaning
     if 'customer_city' in df.columns:
         df['customer_city'] = df['customer_city'].str.lower().str.strip()
 
-    # 4. Handle potential null values, although not required for this dataset.
+    # 5. Handle potential null values, although not required for this dataset.
 
     return df
+
+
+def _transform_geolocation(df: pd.DataFrame) -> pd.DataFrame:
+    """Applies Silver Layer cleaning and type optimization to the customer DataFrame."""
+
+    STRING_COLS_TO_SANITIZE = ['geolocation_city', 'geolocation_state']
+
 
 
 def transform_data(extracted_data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
