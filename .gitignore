@@ -1,2 +1,4 @@
 venv
 .idea/
+.env
+src/migration/bronze/
