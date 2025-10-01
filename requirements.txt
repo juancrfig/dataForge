@@ -4,3 +4,4 @@ pyarrow
 psycopg2-binary
 gunicorn
 uvicorn
+dotenv

@@ -44,7 +44,7 @@ def extract_data(tables_config: List[Dict[str, Any]]) -> Dict[str,  pd.DataFrame
 
         print("--- EXTRACTION PROCESS COMPLETED ---")
 
-        return extracted_data
+    return extracted_data
 
 
 def transform_data(extracted_data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
@@ -58,12 +58,6 @@ def run_migration():
     """Main function to orchestrate the ETL process."""
 
     raw_dataframes = extract_data(TABLES_CONFIG)
-
-    for table in raw_dataframes:
-        print("---CHECK---")
-        print(raw_dataframes[table].head())
-        print()
-
     transformed_dataframes = transform_data(raw_dataframes)
     load_data(transformed_dataframes)
 
