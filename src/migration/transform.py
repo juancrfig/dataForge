@@ -49,9 +49,68 @@ def _transform_customers(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _transform_geolocation(df: pd.DataFrame) -> pd.DataFrame:
-    """Applies Silver Layer cleaning and type optimization to the customer DataFrame."""
+    """
+    Applies Silver Layer cleaning and type optimization to the customer DataFrame.
+
+    This table is aggregated to provide a single, average lat(lng pair per zip code prefix, optimizing it for a
+    one-to-one lookup in the Gold Layer.
+
+    Args:
+        df: The raw geolocation DataFrame.
+
+    Returns:
+        The aggregated and cleaned geolocation lookup DataFrame.
+    """
 
     STRING_COLS_TO_SANITIZE = ['geolocation_city', 'geolocation_state']
+
+    # 1. Security Cleaning: Strip dangerous injection characters from all string columns
+    for col in STRING_COLS_TO_SANITIZE:
+        if col in df.columns and df[col].dtype == 'object':
+            df[col] = df[col].apply(_sanitize_strings)
+            # Standardization
+            df[col] = df[col].str.lower().str.strip()
+            # Type Optimization
+            df[col] = df[col].astype('category')
+
+    if 'geolocation_zip_code_prefix' in df.columns and df['geolocation_zip_code_prefix'].dtype != 'category':
+        df['geolocation_zip_code_prefix'] = df['geolocation_zip_code_prefix'].astype('category')
+
+
+    # 2. Aggregation: Create the final one-to-one lookup table
+    # Group by the zip code prefix and calculate the mean lat/lng
+    agg_df = df.groupby('geolocation_zip_code_prefix', observed=True).agg(
+        avg_lat =('geolocation_lat', 'mean'),
+        avg_lng =('geolocation_lng', 'mean'),
+        state_mode=('geolocation_state', lambda x: x.mode()[0]),
+    ).reset_index()
+
+
+    # 3. Rename column names
+    COLUMN_MAPPING = {
+        'geolocation_zip_code_prefix': 'zip_code_prefix',
+        'avg_lat': 'latitude',
+        'avg_lng': 'longitude',
+        'state_mode': 'state',
+    }
+    agg_df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    agg_df['state'] = agg_df['state'].astype('category')
+
+    return agg_df
+
+
+def _transform_order_items(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning and type optimization to the order items DataFrame.
+
+    Args:
+        df: The raw order items DataFrame.
+
+    Returns:
+        The cleaned order items DataFrame.
+    """
+
 
 
 
@@ -72,6 +131,8 @@ def transform_data(extracted_data: dict[str, pd.DataFrame]) -> dict[str, pd.Data
     # Maps table names to their specific transformation function.
     TRANSFORMATION_MAP = {
         'customers': _transform_customers,
+        'geolocation': _transform_geolocation,
+        'order_items': _transform_order_items,
         # Future tables go here
     }
 
