@@ -110,6 +110,98 @@ def _transform_order_items(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _transform_order_payments(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning and feature engineering to the 'order_payments' DataFrame.
+
+    This table is aggregated to the 'order_id' level to summarize payment details into a single row per order,
+    creating a clean feature lookup.
+
+    Args:
+        df: The raw 'order_payments' DataFrame.
+
+    Returns:
+        The transformed and aggregated DataFrame ready for joining with te 'orders' table.
+    """
+    # Security & Cleaning
+    df = _clean_string_columns(_sanitize_dataframe(df))
+    # Initial Type Optimization
+    if 'payment_type' in df.columns:
+        df['payment_type'] = df['payment_type'].astype('category')
+
+    # Aggregation: Summarize payments to the Order level (one row per 'order_id')
+    agg_df = df.groupby('order_id', observed=True).agg(
+        total_payment_value=('payment_value', 'sum'),
+        max_installments=('payment_installments', 'max'),
+        payment_chunk_count=('payment_sequential', 'count'),
+        # Determine the primary payment type by frequency (mode)
+        main_payment_type=('payment_type', lambda x: x.mode()[0] if not x.mode().empty else None)
+    ).reset_index()
+
+    # Renaming
+    COLUMN_MAPPING = {
+        'order_id': 'id',
+        'total_payment_value': 'total_paid',
+        'max_installments': 'num_payments',
+        'main_payment_type': 'payment_type_mode',
+    }
+    agg_df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    agg_df = _set_category_type(df)
+
+    return agg_df
+
+def _transform_order_reviews(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning, type casting, and feature engineering to the 'order_reviews' DataFrame.
+
+    This function casts date objects, cleans text, and aggregates review data to the order level
+    (mean score, review count) for a clean Gold Layer lookup.
+
+    Args:
+        df: The raw 'order_reviews' DataFrame.
+
+    Returns:
+        The transformed and aggregated DataFrame ready for joining with the 'orders' table.
+    """
+    # 1. Security & Cleaning (Sanitize and clean all string columns)
+    df = _clean_string_columns(_sanitize_dataframe(df))
+
+    # 2. Datetime Casting
+    date_cols = ['review_creation_date', 'review_answer_timestamp']
+    existing_date_cols = [col for col in date_cols if col in df.columns]
+    if existing_date_cols:
+        df[existing_date_cols] = df[existing_date_cols].apply(pd.to_datetime, errors='coerce')
+
+    # Handle Null comments
+    text_cols = ['review_comment_title', 'review_comment_message']
+    existing_text_cols = [col for col in text_cols if col in df.columns]
+    if existing_text_cols:
+        df[existing_text_cols] = df[existing_text_cols].fillna('')
+
+    # Aggregation to Order Level
+    agg_df = df.groupby('order_id', observed=True).agg(
+        review_count=('review_id', 'count'),
+        avg_review_score=('review_score', 'mean'),
+        latest_review_date=('review_creation_date', 'max'),
+        latest_answer_date=('review_answer_timestamp', 'max'),
+    ).reset_index()
+
+    # 4. Renamin
+    COLUMN_MAPPING = {
+        'order_id': 'id',
+        'review_count': 'num_reviews',
+        'avg_review_score': 'score_avg',
+        'latest_review_date': 'review_date_latest',
+        'latest_answer_date': 'answer_date_latest',
+    }
+    agg_df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    # 5. Final Type Optimization
+    agg_df = _set_category_type(agg_df)
+
+    return agg_df
+
 
 def transform_data(extracted_data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
@@ -130,6 +222,8 @@ def transform_data(extracted_data: dict[str, pd.DataFrame]) -> dict[str, pd.Data
         'customers': _transform_customers,
         'geolocation': _transform_geolocation,
         'order_items': _transform_order_items,
+        'order_payments': _transform_order_payments,
+        'order_reviews': _transform_order_reviews
         # Future tables go here
     }
 
