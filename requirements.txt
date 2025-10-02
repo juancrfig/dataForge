@@ -6,3 +6,4 @@ gunicorn
 uvicorn
 dotenv
 sqlalchemy
+fastapi

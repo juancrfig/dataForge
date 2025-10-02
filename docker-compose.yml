@@ -1,0 +1,21 @@
+services:
+
+  # The API Service - A long-running process
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api # A dedicated Dockerfile.api for the API
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env # Loads environment variables from a .env file
+    command: uvicorn src.api.app:app --host 0.0.0.0 --port 8000
+
+  # The ETL Service - A one-off task
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile.etl
+    env_file:
+      - .env # Reuses the same .env file for consistency
+    command: python src/etl/main.py
