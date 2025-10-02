@@ -15,7 +15,6 @@ def main():
 
     raw_dataframes = extract_data(TABLES_CONFIG)
     transformed_dataframes = transform_data(raw_dataframes)
-    print("TRANSFORMED DATAFRAMES", transformed_dataframes)
     load_data(transformed_dataframes)
 
 
