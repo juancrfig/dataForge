@@ -203,6 +203,187 @@ def _transform_order_reviews(df: pd.DataFrame) -> pd.DataFrame:
     return agg_df
 
 
+def _transform_orders(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning and feature engineering to the 'orders' DataFrame.
+
+    This function casts timestamp columns to datetime objects, engineers several key
+    time-based features (e.g., delivery time, days to ship), and standardizes
+    column names for the Gold Layer.
+
+    Args:
+        df: The raw 'orders' DataFrame.
+
+    Returns:
+        The transformed 'orders' DataFrame with optimized types and new features.
+    """
+    # 1. Standard Cleaning & Initial Type Optimization
+    df = _clean_string_columns(_sanitize_dataframe(df))
+
+    # 2. Safe Datetime Casting
+    date_cols = [
+        'order_purchase_timestamp',
+        'order_approved_at',
+        'order_delivered_carrier_date',
+        'order_delivered_customer_date',
+        'order_estimated_delivery_date'
+    ]
+    existing_date_cols = [col for col in date_cols if col in df.columns]
+    if existing_date_cols:
+        df[existing_date_cols] = df[existing_date_cols].apply(pd.to_datetime, errors='coerce')
+
+    # 3. Renaming (Done before feature engineering for cleaner access)
+    COLUMN_MAPPING = {
+        'order_id': 'id',
+        'customer_id': 'customer',
+        'order_status': 'status',
+        'order_purchase_timestamp': 'purchase',
+        'order_approved_at': 'approved',
+        'order_delivered_carrier_date': 'carrier_delivery',
+        'order_delivered_customer_date': 'customer_delivery',
+        'order_estimated_delivery_date': 'estimated_delivery',
+    }
+    df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    # 4. Feature Engineering: Calculate time deltas in days
+    # These metrics are crucial for business intelligence and performance analysis.
+    # The .dt.days accessor correctly handles NaT (missing dates) by producing NaN.
+    df['delivery_time_days'] = (df['customer_delivery'] - df['purchase']).dt.days
+    df['approval_time_days'] = (df['approved'] - df['purchase']).dt.days
+
+    # Negative values indicate a late delivery.
+    df['delivery_lateness_days'] = (df['estimated_delivery'] - df['customer_delivery']).dt.days
+
+    df = _set_category_type(df)
+
+    return df
+
+
+def _transform_products(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning, feature engineering, and type correction to the 'products' DataFrame.
+
+    This function handles missing values by imputing or filling, corrects data types from float
+    to a nullable integer, engineers a 'volume' feature, and standardizes column names.
+
+    Args:
+        df: The raw 'products' DataFrame.
+
+    Returns:
+        The transformed 'products' DataFrame.
+    """
+    # 1. Standard Cleaning
+    df = _clean_string_columns(_sanitize_dataframe(df))
+
+    # 2. Feature Engineering: Calculate volume before imputing nulls
+    df['product_volume_cm3'] = df['product_length_cm'] * df['product_height_cm'] * df['product_width_cm']
+
+    # 3. Handle Missing Values
+    # Impute the few missing dimensional metrics with the median for robustness.
+    dimensional_cols = [
+        'product_weight_g', 'product_length_cm', 'product_height_cm',
+        'product_width_cm', 'product_volume_cm3'
+    ]
+    for col in dimensional_cols:
+        if col in df.columns:
+            median_val = df[col].median()
+            df[col].fillna(median_val)
+
+    # Fill missing category with a placeholder; it's a feature, not a metric.
+    if 'product_category_name' in df.columns:
+        df['product_category_name'] = df['product_category_name'].fillna('unknown')
+
+    # 4. Correct Data Types
+    # These columns represent counts or lengths and should be integers.
+    # We use pandas' nullable 'Int64' type to handle any potential nulls.
+    integer_cols = [
+        'product_name_lenght', 'product_description_lenght', 'product_photos_qty'
+    ]
+    for col in integer_cols:
+        if col in df.columns:
+            df[col] = df[col].astype('Int64')
+
+    # 5. Renaming
+    COLUMN_MAPPING = {
+        'product_id': 'id',
+        'product_category_name': 'category',
+        'product_name_lenght': 'name_length',
+        'product_description_lenght': 'description_length',
+        'product_photos_qty': 'photos_qty',
+        'product_weight_g': 'weight_g',
+        'product_length_cm': 'length_cm',
+        'product_height_cm': 'height_cm',
+        'product_width_cm': 'width_cm',
+        'product_volume_cm3': 'volume_cm3'
+    }
+    df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    # 6. Final Type Optimization for IDs and categorical features
+    df = _set_category_type(df)
+
+    return df
+
+
+def _transform_sellers(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning and type optimization to the 'sellers' DataFrame.
+
+    This function standardizes column names and converts all columns to memory-efficient
+    dtypes suitable for joining.
+
+    Args:
+        df: The raw 'sellers' DataFrame.
+
+    Returns:
+        The transformed 'sellers' DataFrame.
+    """
+    # 1. Standard Cleaning
+    df = _clean_string_columns(_sanitize_dataframe(df))
+
+    # 2. Renaming
+    COLUMN_MAPPING = {
+        'seller_id': 'id',
+        'seller_zip_code_prefix': 'zip_code_prefix',
+        'seller_city': 'city',
+        'seller_state': 'state',
+    }
+    df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    # 3. Final Type Optimization
+    df = _set_category_type(df)
+
+    return df
+
+
+def _transform_category_translation(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applies Silver Layer cleaning and type optimization to the 'product_category_name_translation' DataFrame.
+
+    This function prepares the translation table for use as a clean lookup map by standardizing
+    names and optimizing data types.
+
+    Args:
+        df: The raw category translation DataFrame.
+
+    Returns:
+        The transformed DataFrame.
+    """
+    # 1. Standard Cleaning (Crucial for reliable joins)
+    df = _clean_string_columns(_sanitize_dataframe(df))
+
+    # 2. Renaming
+    COLUMN_MAPPING = {
+        'product_category_name': 'category',
+        'product_category_name_english': 'category_english',
+    }
+    df.rename(columns=COLUMN_MAPPING, inplace=True)
+
+    # 3. Final Type Optimization
+    df = _set_category_type(df)
+
+    return df
+
+
 def transform_data(extracted_data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """
     Orchestrates all Silver Layer transformations across the extracted DataFrames using
@@ -223,8 +404,11 @@ def transform_data(extracted_data: dict[str, pd.DataFrame]) -> dict[str, pd.Data
         'geolocation': _transform_geolocation,
         'order_items': _transform_order_items,
         'order_payments': _transform_order_payments,
-        'order_reviews': _transform_order_reviews
-        # Future tables go here
+        'order_reviews': _transform_order_reviews,
+        'orders': _transform_orders,
+        'products': _transform_products,
+        'sellers': _transform_sellers,
+        'product_category_name_translation': _transform_category_translation
     }
 
     for table_name, df in transformed_data.items():
